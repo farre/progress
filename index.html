@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<script src="progress.js"></script>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid/+esm';
+mermaid.initialize({ startOnLoad: false, flowchart: { curve: "basis", useMaxWidth: true, width: "100%" }, securityLevel: 'loose' });
+
+async function drawGraph() {
+  let element = document.querySelector("#container");
+  element.replaceChildren();
+  const graph = document.createElement("div");
+  const id = `graph${Math.floor(Math.random()*0xffffffff)}`
+  graph.setAttribute("id", id);
+  const definition = await create_graph(input.value, +depth.selectedOptions[0].value);
+  const { svg, bindFunctions } = await mermaid.render(id, definition);
+  element.innerHTML = svg;
+  if (bindFunctions) {
+    bindFunctions(element);
+  }
+}
+
+addEventListener("load", () => {
+  for (const ix of [1,2,3,4,5]) {
+    const e = document.createElement("option");
+    e.value = ix;
+    if (ix == 3) {
+      e.setAttribute("selected", true);
+    }
+    e.innerText = ix;
+    depth.appendChild(e);
+  }
+  button.addEventListener("click", drawGraph);
+}, {once: true});
+
+</script>
+<input type="text" id="input"></input> <input type="button" value="Submit" id="button"></input> <select id="depth"></select><br>
+<div id="container"></div>
