@@ -10,6 +10,9 @@ async function drawGraph() {
   const graph = document.createElement("div");
   const id = `graph${Math.floor(Math.random()*0xffffffff)}`
   graph.setAttribute("id", id);
+  const params =  new URL(location).searchParams;
+  const bugNumber = params.get("bug");
+  const maxDepth = +params.get("depth");
   const definition = await create_graph(input.value, +depth.selectedOptions[0].value);
   const { svg, bindFunctions } = await mermaid.render(id, definition);
   element.innerHTML = svg;
@@ -18,17 +21,61 @@ async function drawGraph() {
   }
 }
 
+function changeInput() {
+  const url = new URL(location);
+  const params =  url.searchParams;
+  if (input.value.length) {
+    params.set("bug", input.value);
+  } else {
+    params.delete("bug");
+  }
+
+  history.replaceState({}, null, url);
+}
+
+function changeDepth() {
+  const url = new URL(location);
+  const params =  url.searchParams;
+  params.set("depth", +depth.selectedOptions[0].value);
+  history.replaceState({}, null, url);
+}
+
 addEventListener("load", () => {
+  const url = new URL(location);
+  const params =  url.searchParams;
+  const hasBug = params.has("bug");
+
+  if (hasBug) {
+    input.value = params.get("bug");
+  }
+
+  let maxDepth = 3;
+  if (params.has("depth")) {
+    maxDepth = +params.get("depth");
+    if (isNaN(maxDepth)) {
+      maxDepth = 3;
+    }
+
+    maxDepth = Math.max(maxDepth, 1);
+    maxDepth = Math.min(maxDepth, 5);
+  }
+
   for (const ix of [1,2,3,4,5]) {
     const e = document.createElement("option");
     e.value = ix;
-    if (ix == 3) {
+    if (ix == maxDepth) {
       e.setAttribute("selected", true);
     }
     e.innerText = ix;
     depth.appendChild(e);
   }
   button.addEventListener("click", drawGraph);
+  input.addEventListener("change", changeInput);
+  depth.addEventListener("change", changeDepth);
+
+  if (hasBug) {
+    drawGraph();
+  }
 }, {once: true});
 
 </script>
