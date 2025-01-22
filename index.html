@@ -1,4 +1,16 @@
 <!DOCTYPE html>
+<head>
+  <style>
+.mermaidTooltip {
+  position: absolute;
+  will-change: transform;
+  background-color: rgb(255 255 255 / 100%);
+  border: 1px solid black;
+  padding: 3px;
+  font-size: 80%;
+}
+  </style>
+</head>
 <script src="progress.js"></script>
 <script type="module">
 import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid/+esm';
@@ -81,3 +93,4 @@ addEventListener("load", () => {
 </script>
 <input type="text" id="input"></input> <input type="button" value="Submit" id="button"></input> <select id="depth"></select><br>
 <div id="container"></div>
+<br><br><br><br><br><br><br>
