@@ -38,7 +38,7 @@ async function bugs(id) {
     return { bugs: []};
   }
 
-  const include_fields = "id,blocks,depends_on,summary,status,attachments";
+  const include_fields = "id,blocks,depends_on,summary,status,attachments,assigned_to";
   return await rest(`bug`, {}, [{id, include_fields}]);
 }
 
@@ -78,9 +78,16 @@ function closed_bug(str) {
   return str.startsWith("RESOLVED") || str.startsWith("VERIFIED")
 }
 
+function assigned_bug(node) {
+  const status = node.status ?? "";
+  const assigned_to = node.assigned_to ?? "";
+  return status.startsWith("ASSIGNED") || ((status.startsWith("NEW") || status.startsWith("REOPENED")) && (assigned_to !== "nobody@mozilla.org"));
+}
+
 class State {
   static resolved = "resolved";
   static available = "available";
+  static inprogress = "inprogress";
   static blocked = "blocked";
   static unknown = "unknown";
   static review = "review";
@@ -98,11 +105,14 @@ class State {
     }
 
     if (is_empty || leaf) {
-      console.log(`attachments of ${node.id}: ${JSON.stringify((node.attachments ?? []))}`);
       if (node.attachments && node.attachments.some(attachment =>
         (attachment.file_name ?? "").startsWith("phabricator-") && !attachment.is_obsolete
       )) {
         return State.review;
+      }
+
+      if (assigned_bug(node)) {
+        return State.inprogress;
       }
 
       return State.available;
