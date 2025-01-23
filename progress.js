@@ -38,7 +38,7 @@ async function bugs(id) {
     return { bugs: []};
   }
 
-  const include_fields = "id,blocks,depends_on,summary,status";
+  const include_fields = "id,blocks,depends_on,summary,status,attachments";
   return await rest(`bug`, {}, [{id, include_fields}]);
 }
 
@@ -82,23 +82,30 @@ class State {
   static resolved = "resolved";
   static available = "available";
   static blocked = "blocked";
-  static unknown = "unknown"
+  static unknown = "unknown";
+  static review = "review";
 
-  static get_status(open_bugs, status, leaf) {
-    if (!open_bugs && closed_bug(status ?? "")) {
+  static get_status(open_bugs, node, leaf) {
+    const status = node.status;
+
+    const is_empty = !(open_bugs.length);
+    if (is_empty && closed_bug(status ?? "")) {
       return State.resolved;
     }
 
-    if (open_bugs && closed_bug(status ?? "")) {
-      return State.unknown;
+    if (!is_empty && closed_bug(status ?? "")) {
+      return State.resolved;
     }
 
-    if (!open_bugs) {
+    if (is_empty || leaf) {
+      console.log(`attachments of ${node.id}: ${JSON.stringify((node.attachments ?? []))}`);
+      if (node.attachments && node.attachments.some(attachment =>
+        (attachment.file_name ?? "").startsWith("phabricator-") && !attachment.is_obsolete
+      )) {
+        return State.review;
+      }
+
       return State.available;
-    }
-
-    if (open_bugs && leaf) {
-      return State.unknown;
     }
 
     return State.blocked;
@@ -111,12 +118,13 @@ function node_status(nodes, from, to) {
     (node) => closed_bug(nodes[node]?.status ?? "")
   );
   const from_status = `[${from.id} ${from_resolved.length}/${from_depends_on.length}]:::${State.get_status(
-    from_depends_on.filter(node => !closed_bug(nodes[node]?.status ?? "")).length,
-    from.status
+    from_depends_on.filter(node => !closed_bug(nodes[node]?.status ?? "")),
+    from
   )}`;
 
   const to_depends_on = to.depends_on;
-  const to_status = !to_depends_on.length ? `[${to.id}${nodes[to.id] ? "" : " ??/??"}]${`:::${State.get_status(nodes[to.id] ? 0 : 1, to.status, true)}`}` : "";
+  const to_node = nodes[to.id];
+  const to_status = !to_depends_on.length ? `[${to.id}${nodes[to.id] ? "" : " ??/??"}]${`:::${State.get_status(to_node ? [to_node] : [], to, true)}`}` : "";
 
   return { from_status, to_status };
 }
@@ -140,6 +148,7 @@ async function create_graph(start, max_depth) {
     "classDef available fill:yellow",
     "classDef unknown fill:orange",
     "classDef blocked fill:red",
+    "classDef review fill:lightgreen",
   ];
 
   for (const from of Object.values(nodes)) {
