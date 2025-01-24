@@ -84,12 +84,19 @@ function assigned_bug(node) {
   return status.startsWith("ASSIGNED") || ((status.startsWith("NEW") || status.startsWith("REOPENED")) && (assigned_to !== "nobody@mozilla.org"));
 }
 
+function has_patch(node) {
+  return node.attachments && node.attachments.some(attachment =>
+    (attachment.file_name ?? "").startsWith("phabricator-") && !attachment.is_obsolete
+  );
+}
+
 class State {
   static resolved = "resolved";
   static available = "available";
   static inprogress = "inprogress";
+  static blockedinprogress = "blockedinprogress";
   static blocked = "blocked";
-  static unknown = "unknown";
+  static unlandable = "unlandable";
   static review = "review";
 
   static get_status(open_bugs, node, leaf) {
@@ -105,9 +112,7 @@ class State {
     }
 
     if (is_empty || leaf) {
-      if (node.attachments && node.attachments.some(attachment =>
-        (attachment.file_name ?? "").startsWith("phabricator-") && !attachment.is_obsolete
-      )) {
+      if (has_patch(node)) {
         return State.review;
       }
 
@@ -116,6 +121,14 @@ class State {
       }
 
       return State.available;
+    }
+
+    if (has_patch(node)) {
+      return State.unlandable;
+    }
+
+    if (assigned_bug(node)) {
+      return State.blockedinprogress;
     }
 
     return State.blocked;
@@ -156,9 +169,9 @@ async function create_graph(start, max_depth) {
   const styles = [
     "classDef resolved fill:green",
     "classDef available fill:yellow",
-    "classDef unknown fill:orange",
     "classDef blocked fill:red",
     "classDef review fill:lightgreen",
+    "classDef unlandable fill:lightpink",
   ];
 
   for (const from of Object.values(nodes)) {

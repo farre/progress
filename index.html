@@ -10,20 +10,36 @@
   font-size: 80%;
 }
 
-.stripes {
+#inprogress {
   background: repeating-linear-gradient(
-  -45deg,
-  yellow,
-  yellow 10px,
-  lightgreen 10px,
-  lightgreen 20px
-);
+    -45deg,
+    yellow,
+    yellow 10px,
+    lightgreen 10px,
+    lightgreen 20px
+  );
+}
+
+#blockedinprogress {
+  background: repeating-linear-gradient(
+    -45deg,
+    red,
+    red 10px,
+    lightgreen 10px,
+    lightgreen 20px
+  );
 }
 
 .inprogress > rect {
   fill: unset !important;
-  fill: url(stripes.svg#stripes) !important;
+  fill: url(inprogress.svg#stripes) !important;
 }
+
+.blockedinprogress > rect {
+  fill: unset !important;
+  fill: url(blocked_inprogress.svg#stripes) !important;
+}
+
 
 .legend {
   position: fixed;
@@ -119,8 +135,10 @@ addEventListener("load", () => {
     <tr><th>Color</th><th>State</th></tr>
     <tr><td bgcolor="red"></td><td>Blocked</td></tr>
     <tr><td bgcolor="yellow"></td><td>Ready to start</td></tr>
-    <tr><td class="stripes"></td><td>In progress</td></tr>
-    <tr><td bgcolor="lightgreen"></td><td>In Review</td></tr>
+    <tr><td id="inprogress"></td><td>In progress</td></tr>
+    <tr><td id="blockedinprogress"></td><td>Progress blocked</td></tr>
+    <tr><td bgcolor="lightpink"></td><td>Landing blocked</td></tr>
+    <tr><td bgcolor="lightgreen"></td><td>In review</td></tr>
     <tr><td bgcolor="green"></td><td>Done</td></tr>
   </table>
 </div>
