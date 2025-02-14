@@ -99,10 +99,10 @@ class State {
   static unlandable = "unlandable";
   static review = "review";
 
-  static get_status(open_bugs, node, leaf) {
+  static get_status(bugs, node, leaf) {
     const status = node.status;
 
-    const is_empty = !(open_bugs.length);
+    const is_empty = !(bugs.length);
     if (is_empty && closed_bug(status ?? "")) {
       return State.resolved;
     }
@@ -135,13 +135,30 @@ class State {
   }
 }
 
+function reachable_from(node, nodes) {
+  const reachable = {};
+  const worklist = [...node.depends_on];
+
+  for (let child = worklist.pop(); child; child = worklist.pop()) {
+    if (child in reachable) {
+      continue;
+    }
+
+    const reachable_child = nodes[child];
+    reachable[child] = reachable_child;
+    worklist.push(...reachable_child.depends_on)
+  }
+
+  return Object.values(reachable);
+}
+
 function node_status(nodes, from, to) {
-  const from_depends_on = from.depends_on;
-  const from_resolved = from_depends_on.filter(
-    (node) => closed_bug(nodes[node]?.status ?? "")
+  const from_depends_on = reachable_from(from, nodes);
+  const from_depends_on_closed = from_depends_on.filter(
+    (node) => closed_bug(node?.status ?? "")
   );
-  const from_status = `[${from.id} ${from_resolved.length}/${from_depends_on.length}]:::${State.get_status(
-    from_depends_on.filter(node => !closed_bug(nodes[node]?.status ?? "")),
+  const from_status = `[${from.id} ${from_depends_on_closed.length}/${from_depends_on.length}]:::${State.get_status(
+    from.depends_on.filter(node => !closed_bug(nodes[node]?.status ?? "")),
     from
   )}`;
 
