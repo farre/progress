@@ -38,7 +38,7 @@ async function bugs(id) {
     return { bugs: []};
   }
 
-  const include_fields = "id,blocks,depends_on,summary,status,attachments,assigned_to";
+  const include_fields = "id,blocks,depends_on,summary,status,attachments,assigned_to,resolution";
   return await rest(`bug`, {}, [{id, include_fields}]);
 }
 
@@ -74,14 +74,20 @@ async function create_nodes(start, max_depth) {
   return nodes;
 }
 
-function closed_bug(str) {
-  return str.startsWith("RESOLVED") || str.startsWith("VERIFIED")
+function closed_bug(node) {
+  const status = node.status ?? "";
+  return status.startsWith("RESOLVED") || status.startsWith("VERIFIED")
 }
 
 function assigned_bug(node) {
   const status = node.status ?? "";
   const assigned_to = node.assigned_to ?? "";
   return status.startsWith("ASSIGNED") || ((status.startsWith("NEW") || status.startsWith("REOPENED")) && (assigned_to !== "nobody@mozilla.org"));
+}
+
+function duplicate_bug(node) {
+  const resolution = node.resolution ?? "";
+  return resolution.endsWith("DUPLICATE");
 }
 
 function has_patch(node) {
@@ -98,16 +104,19 @@ class State {
   static blocked = "blocked";
   static unlandable = "unlandable";
   static review = "review";
+  static duplicate = "duplicate";
 
   static get_status(bugs, node, leaf) {
-    const status = node.status;
+    if (duplicate_bug(node)) {
+      return State.duplicate;
+    }
 
     const is_empty = !(bugs.length);
-    if (is_empty && closed_bug(status ?? "")) {
+    if (is_empty && closed_bug(node)) {
       return State.resolved;
     }
 
-    if (!is_empty && closed_bug(status ?? "")) {
+    if (!is_empty && closed_bug(node)) {
       return State.resolved;
     }
 
@@ -179,7 +188,7 @@ function htmlencode(str){
   });
 }
 
-async function create_graph(start, max_depth) {
+async function create_graph(start, max_depth, filter_dups = false) {
   const nodes = await create_nodes(start, max_depth);
   const links = [];
   const interaction = [];
@@ -189,20 +198,43 @@ async function create_graph(start, max_depth) {
     "classDef blocked fill:red",
     "classDef review fill:lightgreen",
     "classDef unlandable fill:lightpink",
+    "classDef duplicate fill:teal",
   ];
 
   for (const from of Object.values(nodes)) {
+    if (filter_dups && duplicate_bug(from)) {
+      console.log(`from: ${from.summary}`);
+      continue;
+    }
+
     for (const to of from.depends_on) {
-      const { to_status, from_status } = node_status(nodes, from, get_node(nodes, to));
+      const to_node = get_node(nodes, to);
+      if (filter_dups && duplicate_bug(to_node)) {
+        continue;
+      }
+      const { to_status, from_status } = node_status(nodes, from, to_node);
       links.push(`${to}${to_status} --> ${from.id}${from_status}`);
     }
 
     interaction.push(
       `click ${from.id} "https://bugzilla.mozilla.org/show_bug.cgi?id=${from.id}" "${htmlencode(from.summary)}" _blank`
     );
-
   }
-  return `flowchart LR\n${links.join("\n")}\n${interaction.join(
+
+  const get_dup_graph = () => {
+    const dup_node = [];
+    const dup_interaction = [];
+    for (const dup of Object.values(nodes).filter(duplicate_bug)) {
+      dup_node.push(`${dup.id}:::duplicate`);
+      dup_interaction.push(`click ${dup.id} "https://bugzilla.mozilla.org/show_bug.cgi?id=${dup.id}" "${htmlencode(dup.summary)}" _blank`);
+    }
+  
+    return `subgraph "Duplicates"\ndirection TB\n${dup_node.join("\n")}\n${dup_interaction.join("\n")}\nclassDef duplicate fill:teal\nend\n`;
+  };
+  const graph = `subgraph "Progress"\ndirection LR\n${links.join("\n")}\n${interaction.join(
     "\n"
-  )}\n${styles.join("\n")}\n`;
+  )}\nend`;
+
+
+  return `flowchart LR\n${styles.join("\n")}\n${graph}\n${filter_dups ? `${get_dup_graph()}\n` : ""}`;
 }
