@@ -164,10 +164,10 @@ function reachable_from(node, nodes) {
 function node_status(nodes, from, to) {
   const from_depends_on = reachable_from(from, nodes);
   const from_depends_on_closed = from_depends_on.filter(
-    (node) => closed_bug(node?.status ?? "")
+    (node) => closed_bug(node) && !duplicate_bug(node)
   );
-  const from_status = `[${from.id} ${from_depends_on_closed.length}/${from_depends_on.length}]:::${State.get_status(
-    from.depends_on.filter(node => !closed_bug(nodes[node]?.status ?? "")),
+  const from_status = `[${from.id} ${from_depends_on_closed.length}/${from_depends_on.filter(n => !duplicate_bug(n)).length}]:::${State.get_status(
+    from.depends_on.filter(node => !closed_bug(nodes[node])),
     from
   )}`;
 
