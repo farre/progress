@@ -35,20 +35,21 @@ async function rest(endpoint, raw_headers, params) {
 
 async function bugs(id) {
   if (!id.length) {
-    return { bugs: []};
+    return { bugs: [] };
   }
 
-  const include_fields = "id,blocks,depends_on,summary,status,attachments,assigned_to,resolution";
-  return await rest(`bug`, {}, [{id, include_fields}]);
+  const include_fields =
+    "id,blocks,depends_on,summary,status,attachments,assigned_to,resolution,type";
+  return await rest(`bug`, {}, [{ id, include_fields }]);
 }
 
 function unique(nodes, ids) {
-  return [...new Set(ids.filter(id => !nodes.hasOwnProperty(id)))];
+  return [...new Set(ids.filter((id) => !nodes.hasOwnProperty(id)))];
 }
 
 async function create_nodes(start, max_depth) {
   const nodes = {};
-  let work_list = [{ depends_on: [start]}];
+  let work_list = [{ depends_on: [start] }];
   let next_work_list = [];
   let depth = 0;
   while (work_list.length) {
@@ -76,13 +77,17 @@ async function create_nodes(start, max_depth) {
 
 function closed_bug(node) {
   const status = node.status ?? "";
-  return status.startsWith("RESOLVED") || status.startsWith("VERIFIED")
+  return status.startsWith("RESOLVED") || status.startsWith("VERIFIED");
 }
 
 function assigned_bug(node) {
   const status = node.status ?? "";
   const assigned_to = node.assigned_to ?? "";
-  return status.startsWith("ASSIGNED") || ((status.startsWith("NEW") || status.startsWith("REOPENED")) && (assigned_to !== "nobody@mozilla.org"));
+  return (
+    status.startsWith("ASSIGNED") ||
+    ((status.startsWith("NEW") || status.startsWith("REOPENED")) &&
+      assigned_to !== "nobody@mozilla.org")
+  );
 }
 
 function duplicate_bug(node) {
@@ -91,9 +96,18 @@ function duplicate_bug(node) {
 }
 
 function has_patch(node) {
-  return node.attachments && node.attachments.some(attachment =>
-    (attachment.file_name ?? "").startsWith("phabricator-") && !attachment.is_obsolete
+  return (
+    node.attachments &&
+    node.attachments.some(
+      (attachment) =>
+        (attachment.file_name ?? "").startsWith("phabricator-") &&
+        !attachment.is_obsolete
+    )
   );
+}
+
+function is_meta_bug(node) {
+  return node.summary.startsWith("[meta]") || node.summary.startsWith("[bugs]");
 }
 
 class State {
@@ -106,12 +120,11 @@ class State {
   static review = "review";
   static duplicate = "duplicate";
 
-  static get_status(bugs, node, leaf) {
+  static get_status(node, is_empty, leaf) {
     if (duplicate_bug(node)) {
       return State.duplicate;
     }
 
-    const is_empty = !(bugs.length);
     if (is_empty && closed_bug(node)) {
       return State.resolved;
     }
@@ -155,7 +168,7 @@ function reachable_from(node, nodes) {
 
     const reachable_child = nodes[child];
     reachable[child] = reachable_child;
-    worklist.push(...reachable_child.depends_on)
+    worklist.push(...reachable_child.depends_on);
   }
 
   return Object.values(reachable);
@@ -164,27 +177,30 @@ function reachable_from(node, nodes) {
 function node_status(nodes, from, to) {
   const from_depends_on = reachable_from(from, nodes);
   const from_depends_on_closed = from_depends_on.filter(
-    (node) => closed_bug(node) && !duplicate_bug(node)
+    (node) => closed_bug(node) && !duplicate_bug(node) && !is_meta_bug(node)
   );
-  const from_status = `[${from.id} ${from_depends_on_closed.length}/${from_depends_on.filter(n => !duplicate_bug(n)).length}]:::${State.get_status(
-    from.depends_on.filter(node => !closed_bug(nodes[node])),
-    from
-  )}`;
+  const from_depends_on_total = from_depends_on.filter(
+    (node) => !duplicate_bug(node) && !is_meta_bug(node)
+  );
+  const from_label = `[${from.id} ${from_depends_on_closed.length}/${from_depends_on_total.length}]`;
 
   const to_depends_on = to.depends_on;
-  const to_node = nodes[to.id];
-  const to_status = !to_depends_on.length ? `[${to.id}${nodes[to.id] ? "" : " ??/??"}]${`:::${State.get_status(to_node ? [to_node] : [], to, true)}`}` : "";
+  const to_label = !to_depends_on.length
+    ? `[${to.id}${nodes[to.id] ? "" : " ??/??"}]`
+    : "";
 
-  return { from_status, to_status };
+  const from_status = State.get_status(from, from_depends_on_closed.length);
+  const to_status = State.get_status(to, false, true);
+  return { from_label, to_label, from_status, to_status };
 }
 
 function get_node(nodes, id) {
-  return nodes[id] ?? {id, depends_on: [], status: ""};
+  return nodes[id] ?? { id, depends_on: [], status: "" };
 }
 
-function htmlencode(str){
+function htmlencode(str) {
   return str.replaceAll(/["`]/gi, (special, _offset, input) => {
-    return `&#${special.charCodeAt(0)};`
+    return `&#${special.charCodeAt(0)};`;
   });
 }
 
@@ -192,6 +208,7 @@ async function create_graph(start, max_depth, filter_dups = false) {
   const nodes = await create_nodes(start, max_depth);
   const links = [];
   const interaction = [];
+  const bugs = [];
   const styles = [
     "classDef resolved fill:green",
     "classDef available fill:yellow",
@@ -199,12 +216,29 @@ async function create_graph(start, max_depth, filter_dups = false) {
     "classDef review fill:lightgreen",
     "classDef unlandable fill:lightpink",
     "classDef duplicate fill:teal",
+    "classDef bugs stroke:red,stroke-width:2px,stroke-dasharray: 5 5;",
   ];
+
+  const styled = {
+    resolved: [],
+    available: [],
+    inprogress: [],
+    blockedinprogress: [],
+    blocked: [],
+    unlandable: [],
+    review: [],
+    duplicate: [],
+    bugs: [],
+  };
 
   for (const from of Object.values(nodes)) {
     if (filter_dups && duplicate_bug(from)) {
-      console.log(`from: ${from.summary}`);
       continue;
+    }
+
+    if (from.type === "defect") {
+      console.log(from.summary);
+      bugs.push(from);
     }
 
     for (const to of from.depends_on) {
@@ -212,13 +246,41 @@ async function create_graph(start, max_depth, filter_dups = false) {
       if (filter_dups && duplicate_bug(to_node)) {
         continue;
       }
-      const { to_status, from_status } = node_status(nodes, from, to_node);
-      links.push(`${to}${to_status} --> ${from.id}${from_status}`);
+      const { from_label, to_label, from_status, to_status } = node_status(
+        nodes,
+        from,
+        to_node
+      );
+      links.push(`${to}${to_label} --> ${from.id}${from_label}`);
+
+      styled[from_status].push(from.id);
+      styled[to_status].push(to);
+      for (const { node, status } of [
+        { node: to_node, status: to_status },
+        { node: from, status: from_status },
+      ]) {
+        if (status !== "resolved" && node.type === "defect") {
+          styled.bugs.push(node.id);
+        }
+      }
     }
 
     interaction.push(
-      `click ${from.id} "https://bugzilla.mozilla.org/show_bug.cgi?id=${from.id}" "${htmlencode(from.summary)}" _blank`
+      `click ${from.id} "https://bugzilla.mozilla.org/show_bug.cgi?id=${
+        from.id
+      }" "${htmlencode(from.summary)}" _blank`
     );
+  }
+
+  const apply_style = [];
+  if (bugs.length) {
+    for (const key of Object.keys(styled)) {
+      const nodes = styled[key];
+      if (!nodes.length) {
+        continue;
+      }
+      apply_style.push(`class ${nodes.join(",")} ${key};`);
+    }
   }
 
   const get_dup_graph = () => {
@@ -226,15 +288,22 @@ async function create_graph(start, max_depth, filter_dups = false) {
     const dup_interaction = [];
     for (const dup of Object.values(nodes).filter(duplicate_bug)) {
       dup_node.push(`${dup.id}:::duplicate`);
-      dup_interaction.push(`click ${dup.id} "https://bugzilla.mozilla.org/show_bug.cgi?id=${dup.id}" "${htmlencode(dup.summary)}" _blank`);
+      dup_interaction.push(
+        `click ${dup.id} "https://bugzilla.mozilla.org/show_bug.cgi?id=${
+          dup.id
+        }" "${htmlencode(dup.summary)}" _blank`
+      );
     }
-  
-    return `subgraph "Duplicates"\ndirection TB\n${dup_node.join("\n")}\n${dup_interaction.join("\n")}\nclassDef duplicate fill:teal\nend\n`;
+
+    return `subgraph "Duplicates"\ndirection TB\n${dup_node.join(
+      "\n"
+    )}\n${dup_interaction.join("\n")}\nclassDef duplicate fill:teal\nend\n`;
   };
-  const graph = `subgraph "Progress"\ndirection LR\n${links.join("\n")}\n${interaction.join(
+  const graph = `subgraph "Progress"\ndirection LR\n${links.join(
     "\n"
-  )}\nend`;
+  )}\n${interaction.join("\n")}\nend\n`;
 
-
-  return `flowchart LR\n${styles.join("\n")}\n${graph}\n${filter_dups ? `${get_dup_graph()}\n` : ""}`;
+  return `flowchart LR\n${styles.join("\n")}\n${graph}\n${apply_style.join(
+    "\n"
+  )}\n${filter_dups ? `${get_dup_graph()}\n` : ""}`;
 }
