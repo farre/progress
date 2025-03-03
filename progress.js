@@ -125,11 +125,7 @@ class State {
       return State.duplicate;
     }
 
-    if (is_empty && closed_bug(node)) {
-      return State.resolved;
-    }
-
-    if (!is_empty && closed_bug(node)) {
+    if (closed_bug(node)) {
       return State.resolved;
     }
 
@@ -185,13 +181,13 @@ function node_status(nodes, from, to) {
   const from_label = `[${from.id} ${from_depends_on_closed.length}/${from_depends_on_total.length}]`;
 
   const to_depends_on = to.depends_on;
-  const to_label = !to_depends_on.length
-    ? `[${to.id}${nodes[to.id] ? "" : " ??/??"}]`
-    : "";
+  const to_label = !to_depends_on.length ? `[${to.id}]` : "";
 
-  const from_status = State.get_status(from, from_depends_on_closed.length);
-  const to_status = State.get_status(to, false, true);
-  return { from_label, to_label, from_status, to_status };
+  const empty = !(from_depends_on_total.length - from_depends_on_closed.length);
+
+  const from_status = State.get_status(from, empty, !to);
+
+  return { from_label, to_label, from_status };
 }
 
 function get_node(nodes, id) {
@@ -237,7 +233,6 @@ async function create_graph(start, max_depth, filter_dups = false) {
     }
 
     if (from.type === "defect") {
-      console.log(from.summary);
       bugs.push(from);
     }
 
@@ -246,7 +241,7 @@ async function create_graph(start, max_depth, filter_dups = false) {
       if (filter_dups && duplicate_bug(to_node)) {
         continue;
       }
-      const { from_label, to_label, from_status, to_status } = node_status(
+      const { from_label, to_label, from_status } = node_status(
         nodes,
         from,
         to_node
@@ -254,15 +249,16 @@ async function create_graph(start, max_depth, filter_dups = false) {
       links.push(`${to}${to_label} --> ${from.id}${from_label}`);
 
       styled[from_status].push(from.id);
-      styled[to_status].push(to);
-      for (const { node, status } of [
-        { node: to_node, status: to_status },
-        { node: from, status: from_status },
-      ]) {
+      for (const { node, status } of [{ node: from, status: from_status }]) {
         if (status !== "resolved" && node.type === "defect") {
           styled.bugs.push(node.id);
         }
       }
+    }
+
+    if (!from.depends_on.length) {
+      const from_status = State.get_status(from, true, true);
+      styled[from_status].push(from.id);
     }
 
     interaction.push(
