@@ -249,16 +249,15 @@ async function create_graph(start, max_depth, filter_dups = false) {
       links.push(`${to}${to_label} --> ${from.id}${from_label}`);
 
       styled[from_status].push(from.id);
-      for (const { node, status } of [{ node: from, status: from_status }]) {
-        if (status !== "resolved" && node.type === "defect") {
-          styled.bugs.push(node.id);
-        }
-      }
     }
 
     if (!from.depends_on.length) {
       const from_status = State.get_status(from, true, true);
       styled[from_status].push(from.id);
+
+      if (from_status !== "resolved" && from.type === "defect") {
+        styled.bugs.push(from.id);
+      }
     }
 
     interaction.push(
